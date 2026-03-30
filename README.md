@@ -1,2 +1,0 @@
-# DartVader-
-Darts scoring app.
