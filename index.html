@@ -663,6 +663,7 @@ function botRound(score,d){
 let op='human',diff=0,legs=1,firstThrow=0;
 let g501stats={p0:{wins:0,checkoutDarts:[],checkoutScores:[],visits:[],visitsDone:0},p1:{wins:0,checkoutDarts:[],checkoutScores:[],visits:[],visitsDone:0}};
 let pendingWinner=null;
+let pendingDblMiss=null;
 let g={pl:[],cur:0,hist:[],im:'direct',mult:1,throws:[]};
 let g21={name:'',target:121,scorer:null,totalR:10,dartsA:3,curR:0,hits:0,misses:0,results:[],throws:[],visit:1,visitScore:0,mult:1,im:'direct',statDoubleAttempts:0,statDoubleHits:0,statDartsOnDouble:[],statCheckoutScores:[],statVisitScores:[],statVisitCount:0};
 
@@ -806,7 +807,7 @@ function applyScore(val){
   p.legDarts=(p.legDarts||0)+3;
   if(val===180)show180();
   if(p.visits.length<=3)p.first9.push(val);
-  // dblAttempts in direct mode: tracked in select501Dart based on dart# chosen
+
   if(rem===0){
     const coScore=p.score;
     g.hist.push({pi:g.cur,score:p.score,dartsUsed:1});
@@ -815,18 +816,37 @@ function applyScore(val){
     document.getElementById('ovDart501').classList.add('show');
     return;
   }
-  g.hist.push({pi:g.cur,score:p.score,dartsUsed:1});p.score=rem;p.darts+=1;p.rounds++;g.throws=[];nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);
+  const wasInCO=p.score<=170;// score BEFORE deducting
+  g.hist.push({pi:g.cur,score:p.score,dartsUsed:1});p.score=rem;p.darts+=1;p.rounds++;g.throws=[];
+  if(wasInCO){
+    // Ask how many darts thrown at double this visit
+    document.getElementById('ovDblMissScore').textContent=`Ostaje: ${rem}`;
+    pendingDblMiss={pi:g.cur,callback:()=>{nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);}};
+    document.getElementById('ovDblMiss').classList.add('show');
+  } else {
+    nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);
+  }
+}
+function recordDblMiss(n){
+  document.getElementById('ovDblMiss').classList.remove('show');
+  if(pendingDblMiss){
+    const p=g.pl[pendingDblMiss.pi];
+    p.dblAttempts=(p.dblAttempts||0)+n;
+    const cb=pendingDblMiss.callback;
+    pendingDblMiss=null;
+    if(cb)cb();
+  }
 }
 function select501Dart(n){
-  // n = which dart in this visit hit the double (1,2,3)
+  // n = darts thrown at double (1,2,3), last one was the hit
   document.getElementById('ovDart501').classList.remove('show');
   if(!pendingWinner)return;
   const pi=pendingWinner.pi;
   const p=g.pl[pi];
-  p.checkoutDarts.push(n);
+  p.checkoutDarts.push(n);// n = darts used on double (hit on dart n)
   p.checkoutScores.push(pendingWinner.checkoutScore);
   p.dblHits=(p.dblHits||0)+1;
-  p.dblAttempts=(p.dblAttempts||0)+1;// direct mode: 1 attempt = the double dart
+  p.dblAttempts=(p.dblAttempts||0)+n;// all n darts were thrown at double
   const totalLegDarts=p.legDarts;
   pendingWinner=null;
   checkLegWin(p,pi,totalLegDarts);
@@ -878,7 +898,15 @@ function finishRound(sum,dartsUsed){
     checkLegWin(p,pi,totalLegDarts);
     return;
   }
-  g.hist.push({pi:g.cur,score:p.score,dartsUsed});p.score=rem;p.darts+=dartsUsed;p.rounds++;g.throws=[];g.mult=1;resetMult();nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);
+  const wasInCO2=p.score<=170;
+  g.hist.push({pi:g.cur,score:p.score,dartsUsed});p.score=rem;p.darts+=dartsUsed;p.rounds++;g.throws=[];g.mult=1;resetMult();
+  if(wasInCO2){
+    document.getElementById('ovDblMissScore').textContent=`Ostaje: ${rem}`;
+    pendingDblMiss={pi:g.cur,callback:()=>{nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);}};
+    document.getElementById('ovDblMiss').classList.add('show');
+  } else {
+    nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);
+  }
 }
 function nextP(){g.cur=(g.cur+1)%g.pl.length}
 
@@ -929,8 +957,13 @@ function showWin(p){
     const coRate=dblA>0?Math.round(dblH/dblA*100)+'%':'0%';
     // CHECKOUTS = "hits/darts on double"
     const co=`${dblH}/${dblA}`;
+    // Breakdown: 1-dart hits, 2-dart hits, 3-dart hits
+    const d1=pl.checkoutDarts.filter(d=>d===1).length;
+    const d2=pl.checkoutDarts.filter(d=>d===2).length;
+    const d3=pl.checkoutDarts.filter(d=>d===3).length;
+    const coBreak=dblH>0?`(${d1}×1dart · ${d2}×2dart · ${d3}×3dart)`:'';
     // Dart distribution on double
-    return {avg,f9,coRate,co,hf,hs,wins:pl.wins||0};
+    return {avg,f9,coRate,co,hf,hs,coBreak,wins:pl.wins||0};
   }
   const ps=calcStats(p);
   const os=opp?calcStats(opp):null;
@@ -953,7 +986,7 @@ function showWin(p){
   const rows=[
     ['3-DART AVERAGE', ps.avg, os?.avg],
     ['FIRST 9 AVG.',   ps.f9,  os?.f9],
-    ['CHECKOUT RATE',  ps.coRate, os?.coRate],
+    ['DOUBLE %',  ps.coRate, os?.coRate],
     ['CHECKOUTS',      ps.co,  os?.co],
     ['HIGHEST FINISH', ps.hf,  os?.hf],
     ['HIGHEST SCORE',  ps.hs,  os?.hs],
@@ -965,7 +998,7 @@ function showWin(p){
       <div style="font-size:8px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;width:110px;text-align:center;flex-shrink:0">${lbl}</div>
       <div style="font-family:'Barlow Condensed',sans-serif;font-size:${String(v2||'').length>6?'14':'18'}px;font-weight:700;color:var(--text2);flex:1;text-align:right">${v2??''}</div>
     </div>`).join('');
-  document.getElementById('winInfo').innerHTML=legsRow+nameRow+`<div>${rowsHtml}</div>`;
+  document.getElementById('winInfo').innerHTML=legsRow+nameRow+`<div>${rowsHtml}${breakRow||''}</div>`;
   document.getElementById('ovWin').classList.add('show');
 }
 function restart501(){
@@ -1415,43 +1448,31 @@ function startMic(inputId, btnId, statusId){
     inp.placeholder='Govori broj...';
   };
 
+  let micTriggered=false;
   micRecognition.onresult=(e)=>{
-    // Collect all transcripts (interim + final)
-    let allText='';
-    for(let r=0;r<e.results.length;r++){
-      for(let a=0;a<e.results[r].length;a++){
-        allText+=e.results[r][a].transcript+' ';
-      }
-    }
-    status.textContent='🎤 '+allText.trim();
-    // Only process final results
-    if(!e.results[e.results.length-1].isFinal)return;
+    if(micTriggered)return;
+    // Try to find a number in ANY result (interim or final)
     let found=null;
-    // Try all alternatives
     for(let r=0;r<e.results.length;r++){
       for(let a=0;a<e.results[r].length;a++){
         const transcript=e.results[r][a].transcript.trim();
+        status.textContent='🎤 '+transcript;
         const num=parseSpokenNumber(transcript);
         if(num!==null&&num>=0&&num<=180){found=num;break;}
       }
       if(found!==null)break;
     }
     if(found!==null){
+      micTriggered=true;
+      micRecognition.stop();
       inp.value=found;
       btn.classList.remove('listening');
       btn.classList.add('success');
       status.textContent=`✅ ${found}`;
-      setTimeout(()=>{
-        btn.classList.remove('success');
-        status.textContent='';
-        inp.placeholder='Ukupno 0–180';
-        if(inputId==='dInp')confirmDirect();
-        else if(inputId==='d121Inp')confirm121Direct();
-      },500);
-    } else {
-      status.textContent='❌ Nisam razumio — pokušaj ponovo';
-      btn.classList.remove('listening');
-      setTimeout(()=>{status.textContent='';},2500);
+      // Immediately confirm - no delay
+      if(inputId==='dInp')confirmDirect();
+      else if(inputId==='d121Inp')confirm121Direct();
+      setTimeout(()=>{btn.classList.remove('success');status.textContent='';},800);
     }
   };
 
@@ -1566,11 +1587,25 @@ buildKpad('kPad',kT);buildKpad('k121Pad',t121);
   <div class="ov-bg"></div>
   <div class="ov-box">
     <div style="font-family:'Barlow Condensed',sans-serif;font-size:32px;color:var(--gold);letter-spacing:3px;margin-bottom:6px">CHECKOUT! 🎯</div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:18px">Kojom strelicom u ovom visitu si pogodio double?</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:18px">Koliko strelica si bacio na duplo?</div>
     <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button class="ovbtn primary" onclick="select501Dart(1)">1. strelica</button>
-      <button class="ovbtn primary" onclick="select501Dart(2)">2. strelica</button>
-      <button class="ovbtn primary" onclick="select501Dart(3)">3. strelica</button>
+      <button class="ovbtn primary" onclick="select501Dart(1)">1</button>
+      <button class="ovbtn primary" onclick="select501Dart(2)">2</button>
+      <button class="ovbtn primary" onclick="select501Dart(3)">3</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ovDblMiss">
+  <div class="ov-bg"></div>
+  <div class="ov-box">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;color:var(--text);letter-spacing:2px;margin-bottom:6px">Koliko si bacao na duplo?</div>
+    <div id="ovDblMissScore" style="font-size:13px;color:var(--text2);margin-bottom:16px">Ostaje: —</div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:8px">
+      <button class="ovbtn secondary" onclick="recordDblMiss(0)">0</button>
+      <button class="ovbtn primary" onclick="recordDblMiss(1)">1</button>
+      <button class="ovbtn primary" onclick="recordDblMiss(2)">2</button>
+      <button class="ovbtn primary" onclick="recordDblMiss(3)">3</button>
     </div>
   </div>
 </div>
