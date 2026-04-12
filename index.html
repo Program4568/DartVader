@@ -273,10 +273,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 <body>
 
 <!-- OVERLAYS -->
-<div class="overlay" id="ovBust">
-  <div class="ov-bg" onclick="closeBust()"></div>
-  <div class="ov-box"><div class="bust-word">BUST!</div></div>
+<div class="overlay" id="ovBust" style="pointer-events:none">
+  <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(232,66,58,.12)">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:clamp(100px,30vw,220px);font-weight:900;color:#e8423a;letter-spacing:6px;text-align:center;text-shadow:0 0 80px rgba(232,66,58,.8),0 0 40px rgba(232,66,58,.6),0 0 160px rgba(232,66,58,.3);animation:bustAnim .25s ease-out;line-height:1;user-select:none">BUST</div>
+  </div>
 </div>
+<style>
+@keyframes bustAnim{from{transform:scale(1.4);opacity:0}to{transform:scale(1);opacity:1}}
+</style>
 
 <div class="overlay" id="ovWin">
   <div class="ov-bg"></div>
