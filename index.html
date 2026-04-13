@@ -719,6 +719,89 @@ let pendingDblMiss=null;
 let g={pl:[],cur:0,hist:[],im:'direct',mult:1,throws:[]};
 let g21={name:'',target:121,scorer:null,totalR:10,dartsA:3,curR:0,hits:0,misses:0,results:[],throws:[],visit:1,visitScore:0,mult:1,im:'direct',statDoubleAttempts:0,statDoubleHits:0,statDartsOnDouble:[],statCheckoutScores:[],statVisitScores:[],statVisitCount:0,lastResult:null};
 
+// ─── MIKROFON ─────────────────────────────────────────────────────────────────
+let micRecognition=null;
+let micActive=false;
+let micAutoConfirmTimer=null;
+function startMic(inputId, btnId, statusId){
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    const st=document.getElementById(statusId);
+    if(st)st.textContent='Mikrofon nije podržan u ovom pregledniku';
+    return;
+  }
+  if(micActive){
+    if(micRecognition)micRecognition.stop();
+    return;
+  }
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  micRecognition=new SpeechRecognition();
+  micRecognition.lang='hr-HR';
+  micRecognition.interimResults=true;
+  micRecognition.maxAlternatives=5;
+  micRecognition.continuous=false;
+  const btn=document.getElementById(btnId);
+  const st=document.getElementById(statusId);
+  const inp=document.getElementById(inputId);
+  micActive=true;
+  if(btn)btn.classList.add('listening');
+  if(st)st.textContent='Slušam...';
+
+  function applyResult(found){
+    if(micAutoConfirmTimer){clearTimeout(micAutoConfirmTimer);micAutoConfirmTimer=null;}
+    if(micRecognition){try{micRecognition.stop();}catch(e){}}
+    micActive=false;
+    if(found!==null){
+      if(inp)inp.value=found;
+      if(btn){btn.classList.remove('listening');btn.classList.add('success');setTimeout(()=>btn.classList.remove('success'),1200);}
+      if(st)st.textContent='✓ '+found;
+      // Auto-confirm after 800ms so user sees the number before it submits
+      micAutoConfirmTimer=setTimeout(()=>{
+        if(st)st.textContent='';
+        // Trigger confirm for the right game
+        if(inputId==='dInp')confirmDirect();
+        else if(inputId==='d121Inp')confirm121Direct();
+      },800);
+    } else {
+      if(btn)btn.classList.remove('listening');
+      if(st)st.textContent='Nisam razumio, pokušaj opet';
+      setTimeout(()=>{if(st)st.textContent='';},2500);
+    }
+  }
+
+  function parseSpoken(transcript){
+    const nums=transcript.trim().match(/\d+/g);
+    if(nums){const n=parseInt(nums[0]);if(n>=0&&n<=180&&isValidScore(n))return n;}
+    return null;
+  }
+
+  micRecognition.onresult=(e)=>{
+    const result=e.results[e.results.length-1];
+    if(result.isFinal){
+      let found=null;
+      for(let i=0;i<result.length;i++){
+        const f=parseSpoken(result[i].transcript);
+        if(f!==null){found=f;break;}
+      }
+      applyResult(found);
+    } else {
+      // Show interim result as preview
+      const interim=parseSpoken(result[0].transcript);
+      if(interim!==null&&st)st.textContent='Čujem: '+interim+'...';
+    }
+  };
+  micRecognition.onerror=(e)=>{
+    if(btn)btn.classList.remove('listening');
+    if(st)st.textContent=e.error==='not-allowed'?'Dopusti pristup mikrofonu':'Greška mikrofona';
+    setTimeout(()=>{if(st)st.textContent='';},2500);
+    micActive=false;
+  };
+  micRecognition.onend=()=>{
+    micActive=false;
+    if(btn)btn.classList.remove('listening');
+  };
+  micRecognition.start();
+}
+
 // ─── NAV ─────────────────────────────────────────────────────────────────────
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');document.getElementById('backBtn').classList.toggle('show',id!=='homeScreen');const inGame=id==='game501'||id==='game121';const ib=document.getElementById('installBtn');if(ib)ib.style.display=inGame?'none':'flex';}
 function goHome(){document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show'));showScreen('homeScreen');const ib=document.getElementById('installBtn');if(ib)ib.style.display='flex';}
