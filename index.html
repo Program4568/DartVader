@@ -572,6 +572,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
           <div id="co121Text" style="font-size:13px;color:var(--green);font-weight:600"></div>
         </div>
         <div class="rounds-bar" id="rBar" style="margin-top:10px"></div>
+        <div id="last121Visit" style="display:none;margin-top:6px"></div>
         <div class="dart-slots" id="dSlots"></div>
       </div>
       <div class="turn-panel">
@@ -716,7 +717,7 @@ let g501stats={p0:{wins:0,checkoutDarts:[],checkoutScores:[],visits:[],visitsDon
 let pendingWinner=null;
 let pendingDblMiss=null;
 let g={pl:[],cur:0,hist:[],im:'direct',mult:1,throws:[]};
-let g21={name:'',target:121,scorer:null,totalR:10,dartsA:3,curR:0,hits:0,misses:0,results:[],throws:[],visit:1,visitScore:0,mult:1,im:'direct',statDoubleAttempts:0,statDoubleHits:0,statDartsOnDouble:[],statCheckoutScores:[],statVisitScores:[],statVisitCount:0};
+let g21={name:'',target:121,scorer:null,totalR:10,dartsA:3,curR:0,hits:0,misses:0,results:[],throws:[],visit:1,visitScore:0,mult:1,im:'direct',statDoubleAttempts:0,statDoubleHits:0,statDartsOnDouble:[],statCheckoutScores:[],statVisitScores:[],statVisitCount:0,lastResult:null};
 
 // ─── NAV ─────────────────────────────────────────────────────────────────────
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');document.getElementById('backBtn').classList.toggle('show',id!=='homeScreen');const inGame=id==='game501'||id==='game121';const ib=document.getElementById('installBtn');if(ib)ib.style.display=inGame?'none':'flex';}
@@ -830,9 +831,13 @@ function setIM(m){g.im=m;g.throws=[];g.mult=1;document.getElementById('itD').cla
 function resetMult(){g.mult=1;['mS','mD','mT'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove('on')});const ms=document.getElementById('mS');if(ms)ms.classList.add('on')}
 function setM(v,id){g.mult=v;['mS','mD','mT'].forEach(i=>document.getElementById(i).classList.remove('on'));document.getElementById(id).classList.add('on')}
 
+// Nemoguci 3-dart rezultati
+const IMPOSSIBLE_SCORES=new Set([163,166,169,172,173,175,176,178,179]);
+function isValidScore(n){return n>=0&&n<=180&&!IMPOSSIBLE_SCORES.has(n);}
+
 function dnPress(id,d){const el=document.getElementById(id);const cur=el.value||'';const next=cur+d;const n=parseInt(next);if(!isNaN(n)&&n>=0&&n<=180)el.value=next;}
 function dnDel(id){const el=document.getElementById(id);el.value=el.value.slice(0,-1);}
-function confirmDirect(){const inp=document.getElementById('dInp');const v=parseInt(inp.value);inp.value='';if(isNaN(v)||v<0||v>180)return;applyScore(v)}
+function confirmDirect(){const inp=document.getElementById('dInp');const v=parseInt(inp.value);inp.value='';if(isNaN(v)||!isValidScore(v))return;applyScore(v)}
 document.getElementById('dInp').addEventListener('keydown',e=>{if(e.key==='Enter')confirmDirect()});
 
 function isDouble(n){return(n>=2&&n<=40&&n%2===0)||n===50;}
@@ -1166,7 +1171,7 @@ function start121(){
   g21.scorer=null; // "početak" value
   g21.curR=0;g21.hits=0;g21.misses=0;g21.results=[];
   g21.throws=[];g21.visit=1;g21.visitScore=0;
-  g21.mult=1;g21.im='direct';
+  g21.mult=1;g21.im='direct';g21.hist=[];
   // stats
   g21.statDoubleAttempts=0;
   g21.statDoubleHits=0;
@@ -1174,6 +1179,7 @@ function start121(){
   g21.statCheckoutScores=[];// score of each successful checkout
   g21.statVisitScores=[];// all visit scores (first 9 = "prvih 9")
   g21.statVisitCount=0;
+  g21.lastResult=null;
   buildKpad('k121Pad',t121);
   showScreen('game121');
   render121();
@@ -1189,6 +1195,17 @@ function render121(){
   document.getElementById('s121M').textContent=g21.misses;
   // Checkout hint - ALWAYS show when possible
   updateCheckoutHint(remNow);
+  // Prošli rezultat - zadnji visit
+  const lv=document.getElementById('last121Visit');
+  if(lv){
+    const lastScore=g21.statVisitScores.length>0?g21.statVisitScores[g21.statVisitScores.length-1]:null;
+    if(lastScore!==null){
+      lv.style.display='block';
+      lv.innerHTML=`<div class="plastvisit" style="text-align:center">Zadnji: ${lastScore}</div>`;
+    } else {
+      lv.style.display='none';
+    }
+  }
   // rounds bar
   const rb=document.getElementById('rBar');rb.innerHTML='';
   for(let i=0;i<Math.min(g21.totalR,40);i++){
@@ -1265,7 +1282,7 @@ function setM121(v,id){g21.mult=v;['m121S','m121D','m121T'].forEach(i=>document.
 function confirm121Direct(){
   const inp=document.getElementById('d121Inp');
   const v=parseInt(inp.value);inp.value='';
-  if(isNaN(v)||v<0)return;
+  if(isNaN(v)||!isValidScore(v))return;
   // Direct mode: user enters visit total, no per-dart tracking
   // We need dart# for checkout - ask after if checkout
   processVisit121(v, null);
@@ -1286,7 +1303,39 @@ function t121(base){
     processVisit121(visitSum, dartNum);
   } else render121();
 }
-function undo121(){if(g21.throws.length>0){g21.throws.pop();g21.mult=1;reset121Mult();render121()}}
+function undo121(){
+  if(g21.im==='direct'){
+    const inp=document.getElementById('d121Inp');
+    if(inp&&inp.value){inp.value='';return;}
+  }
+  if(g21.throws.length>0){
+    g21.throws.pop();g21.mult=1;reset121Mult();render121();
+  } else if(g21.hist&&g21.hist.length>0){
+    // Restore previous visit state
+    const h=g21.hist.pop();
+    g21.visitScore=h.visitScore;
+    g21.visit=h.visit;
+    g21.curR=h.curR;
+    g21.hits=h.hits;
+    g21.misses=h.misses;
+    g21.target=h.target;
+    g21.scorer=h.scorer;
+    g21.results=h.results;
+    g21.statVisitCount=h.statVisitCount;
+    g21.statVisitScores=h.statVisitScores;
+    g21.statDoubleAttempts=h.statDoubleAttempts;
+    g21.statDoubleHits=h.statDoubleHits;
+    g21.statDartsOnDouble=h.statDartsOnDouble;
+    g21.statCheckoutScores=h.statCheckoutScores;
+    g21.throws=[];g21.mult=1;reset121Mult();
+    g21.checkoutDartIdx=null;
+    // Close any open overlays
+    ['ovSuccess','ovFail','ovBust','ovDartSelect'].forEach(id=>{
+      const e=document.getElementById(id);if(e)e.classList.remove('show');
+    });
+    render121();
+  }
+}
 function confirm121Round(){
   const visitSum=g21.throws.reduce((a,b)=>a+b,0);
   const dartNum=g21.throws.length;
@@ -1297,6 +1346,23 @@ function confirm121Round(){
 function processVisit121(visitScore, dartNum){
   const remBefore=g21.target-g21.visitScore;
   const remAfter=remBefore-visitScore;
+  // Save state for undo BEFORE applying anything
+  g21.hist.push({
+    visitScore:g21.visitScore,
+    visit:g21.visit,
+    curR:g21.curR,
+    hits:g21.hits,
+    misses:g21.misses,
+    target:g21.target,
+    scorer:g21.scorer,
+    results:[...g21.results],
+    statVisitCount:g21.statVisitCount,
+    statVisitScores:[...g21.statVisitScores],
+    statDoubleAttempts:g21.statDoubleAttempts,
+    statDoubleHits:g21.statDoubleHits,
+    statDartsOnDouble:[...g21.statDartsOnDouble],
+    statCheckoutScores:[...g21.statCheckoutScores],
+  });
   g21.statVisitCount++;
   g21.statVisitScores.push(visitScore);
 
@@ -1371,6 +1437,7 @@ function finishAttempt121(success){
   g21.curR++;
   if(success){
     g21.hits++;g21.results.push(true);
+    g21.lastResult={success:true,score:g21.target,visits:g21.visit};
     const in3=(g21.visit===1);
     const nb=in3&&(g21.scorer===null||g21.target>g21.scorer);
     if(nb)g21.scorer=g21.target;
@@ -1381,6 +1448,7 @@ function finishAttempt121(success){
   } else {
     g21.misses++;g21.results.push(false);
     const rem=g21.target-g21.visitScore;
+    g21.lastResult={success:false,score:g21.target,rem};
     document.getElementById('failScore').textContent=`Ostalo: ${rem}`;
     document.getElementById('failInfo').textContent=`Nije checkout u ${g21.dartsA} strelica`;
     const nextT=g21.scorer!==null?g21.scorer:121;
@@ -1599,12 +1667,12 @@ function startMic(inputId, btnId, statusId){
       const words=lastTranscript.split(/\s+/);
       for(const w of words){
         const num=parseSpokenNumber(w);
-        if(num!==null&&num>=0&&num<=180){found=num;break;}
+        if(num!==null&&num>=0&&num<=180&&!IMPOSSIBLE_SCORES.has(num)){found=num;break;}
       }
       // Ako nije po riječima, probaj cijeli string
       if(found===null){
         const num=parseSpokenNumber(lastTranscript);
-        if(num!==null&&num>=0&&num<=180)found=num;
+        if(num!==null&&num>=0&&num<=180&&!IMPOSSIBLE_SCORES.has(num))found=num;
       }
       if(found!==null){
         micDone=true;
@@ -1626,21 +1694,41 @@ function startMic(inputId, btnId, statusId){
   };
 
   micRecognition.onerror=(e)=>{
+    if(e.error==='aborted')return;// namjerno prekinuto, ignoriraj
     micActive=false;
     btn.classList.remove('listening');
     const msgs={
       'not-allowed':'Dozvoli pristup mikrofonu u browseru',
       'no-speech':'Nije detektiran govor',
       'network':'Greška mreže',
-      'aborted':'Prekinuto'
     };
-    status.textContent=msgs[e.error]||`Greška: ${e.error}`;
-    setTimeout(()=>status.textContent='',3000);
+    if(msgs[e.error]){
+      status.textContent=msgs[e.error];
+      setTimeout(()=>status.textContent='',3000);
+    }
+    // Za sve ostale greške — restart mikrofona automatski
+    if(e.error!=='not-allowed'&&!micDone){
+      setTimeout(()=>{
+        if(!micDone&&!micActive){
+          try{micRecognition.start();micActive=true;btn.classList.add('listening');status.textContent='🎤 Slušam...';}catch(err){}
+        }
+      },500);
+    }
   };
 
   micRecognition.onend=()=>{
-    micActive=false;
     btn.classList.remove('listening');
+    // Ako nije završeno namjerno i mic je još "aktivan" — restart
+    if(!micDone&&micActive){
+      micActive=false;
+      setTimeout(()=>{
+        if(!micDone){
+          try{micRecognition.start();micActive=true;btn.classList.add('listening');}catch(err){}
+        }
+      },300);
+    } else {
+      micActive=false;
+    }
   };
 
   micRecognition.start();
