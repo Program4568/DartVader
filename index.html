@@ -854,7 +854,7 @@ let op='human',diff=0,legs=1,firstThrow=0;
 let g501stats={p0:{wins:0,checkoutDarts:[],checkoutScores:[],visits:[],visitsDone:0},p1:{wins:0,checkoutDarts:[],checkoutScores:[],visits:[],visitsDone:0}};
 let pendingWinner=null;
 let pendingDblMiss=null;
-let g={pl:[],cur:0,hist:[],im:'direct',mult:1,throws:[]};
+let g={pl:[],cur:0,hist:[],im:'direct',mult:1,throws:[],pendingBotReplay:null};
 let g21={name:'',target:121,scorer:null,totalR:10,dartsA:3,curR:0,hits:0,misses:0,results:[],throws:[],visit:1,visitScore:0,mult:1,im:'direct',statDoubleAttempts:0,statDoubleHits:0,statDartsOnDouble:[],statCheckoutScores:[],statVisitScores:[],statVisitCount:0,lastResult:null};
 
 // Nemoguci 3-dart rezultati
@@ -996,6 +996,15 @@ function speakScore(score,remaining){
   ttsPlayNext();
 }
 
+// Run fn after TTS finishes (or immediately if nothing is speaking)
+function afterTTS(fn){
+  if(!window.speechSynthesis||(!ttsBusy&&ttsPhraseQueue.length===0)){fn();return;}
+  // Poll until done
+  const check=setInterval(()=>{
+    if(!ttsBusy&&ttsPhraseQueue.length===0){clearInterval(check);fn();}
+  },80);
+}
+
 // ─── NAV ─────────────────────────────────────────────────────────────────────
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');document.getElementById('backBtn').classList.toggle('show',id!=='homeScreen');const inGame=id==='game501'||id==='game121';const ib=document.getElementById('installBtn');if(ib)ib.style.display=inGame?'none':'flex';if(typeof applyTranslations==='function')applyTranslations();}
 function goHome(){document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show'));showScreen('homeScreen');const ib=document.getElementById('installBtn');if(ib)ib.style.display='flex';}
@@ -1040,7 +1049,7 @@ function start501(){
   let startCur=firstThrow===-1?Math.floor(Math.random()*g.pl.length):firstThrow;
   if(startCur>=g.pl.length)startCur=0;
   g.legFirstPlayer=startCur;// track who started leg 1
-  g.cur=startCur;g.hist=[];g.throws=[];g.mult=1;g.im='direct';g.leg=1;g.legs=legs;
+  g.cur=startCur;g.hist=[];g.throws=[];g.mult=1;g.im='direct';g.leg=1;g.legs=legs;g.pendingBotReplay=null;
   pendingWinner=null;
   updateLegDisplay();
   buildKpad('kPad',kT);showScreen('game501');render501();
@@ -1138,10 +1147,7 @@ function undoK(){
     const inp=document.getElementById('dInp');
     if(inp&&inp.value){inp.value='';return;}
   }
-  if(g.throws.length>0){g.throws.pop();g.mult=1;resetMult();renderHumanUI();}
-  else if(g.hist.length>0){
-    const h=g.hist.pop();
-    g.cur=h.pi;
+  function undoEntry(h){
     const pl=g.pl[h.pi];
     pl.score=h.score;
     pl.darts=Math.max(0,pl.darts-h.dartsUsed);
@@ -1149,9 +1155,36 @@ function undoK(){
     pl.legDarts=Math.max(0,(pl.legDarts||0)-3);
     if(pl.visits&&pl.visits.length>0)pl.visits.pop();
     if(pl.first9&&pl.first9.length>0&&pl.visits&&pl.visits.length<3)pl.first9.pop();
-    g.throws=[];g.mult=1;resetMult();
-    render501();
   }
+  // Clear partial keypad throws first
+  if(g.throws.length>0){g.throws.pop();g.mult=1;resetMult();renderHumanUI();return;}
+  if(g.hist.length===0)return;
+
+  // If top is bot's entry, undo bot first then undo player below
+  if(g.hist[g.hist.length-1].isBot){
+    const bh=g.hist.pop();
+    undoEntry(bh);
+    g.pendingBotReplay=bh.botScored;
+    // Now undo the player entry beneath
+    if(g.hist.length>0&&!g.hist[g.hist.length-1].isBot){
+      const ph=g.hist.pop();
+      undoEntry(ph);
+      g.cur=ph.pi;
+    }
+  } else {
+    // Top is player's visit — undo it
+    const ph=g.hist.pop();
+    undoEntry(ph);
+    g.cur=ph.pi;
+    // If bot entry is below, undo it and queue replay
+    if(g.hist.length>0&&g.hist[g.hist.length-1].isBot){
+      const bh=g.hist.pop();
+      undoEntry(bh);
+      g.pendingBotReplay=bh.botScored;
+    }
+  }
+  g.throws=[];g.mult=1;resetMult();
+  render501();
 }
 function confirmRound(){const sum=g.throws.reduce((a,b)=>a+b,0);finishRound(sum,g.throws.length)}
 
@@ -1180,10 +1213,10 @@ function applyScore(val){
   if(wasInCO){
     // Ask how many darts thrown at double this visit
     document.getElementById('ovDblMissScore').textContent=(appLang==='en'?'Remaining: ':'Ostaje: ')+rem;
-    pendingDblMiss={pi:g.cur,callback:()=>{nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);}};
+    pendingDblMiss={pi:g.cur,callback:()=>{nextP();render501();if(g.pl[g.cur].bot)afterTTS(()=>setTimeout(()=>{const r=g.pendingBotReplay;g.pendingBotReplay=null;r!==null?applyBotScored(r):doBotTurn();},400));}};
     document.getElementById('ovDblMiss').classList.add('show');
   } else {
-    nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);
+    nextP();render501();if(g.pl[g.cur].bot)afterTTS(()=>setTimeout(()=>{const r=g.pendingBotReplay;g.pendingBotReplay=null;r!==null?applyBotScored(r):doBotTurn();},400));
   }
 }
 function recordDblMiss(n){
@@ -1287,25 +1320,25 @@ function finishRound(sum,dartsUsed){
   speakScore(sum,rem);
   if(wasInCO2){
     document.getElementById('ovDblMissScore').textContent=(appLang==='en'?'Remaining: ':'Ostaje: ')+rem;
-    pendingDblMiss={pi:g.cur,callback:()=>{nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);}};
+    pendingDblMiss={pi:g.cur,callback:()=>{nextP();render501();if(g.pl[g.cur].bot)afterTTS(()=>setTimeout(()=>{const r=g.pendingBotReplay;g.pendingBotReplay=null;r!==null?applyBotScored(r):doBotTurn();},400));}};
     document.getElementById('ovDblMiss').classList.add('show');
   } else {
-    nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);
+    nextP();render501();if(g.pl[g.cur].bot)afterTTS(()=>setTimeout(()=>{const r=g.pendingBotReplay;g.pendingBotReplay=null;r!==null?applyBotScored(r):doBotTurn();},400));
   }
 }
 function nextP(){g.cur=(g.cur+1)%g.pl.length}
 
 // ─── BOT TURN ─────────────────────────────────────────────────────────────────
-function doBotTurn(){
+function applyBotScored(scored){
   const p=g.pl[g.cur];
-  const scored=botRound(p.score,diff);
   const rem=p.score-scored;
   p.visits.push(scored);
   p.legDarts=(p.legDarts||0)+3;
   if(scored===180)show180();
   if(p.visits.length<=3)p.first9.push(scored);
+  speakScore(scored,rem>0&&rem<=170?rem:undefined);
   if(rem<0||rem===1){
-    // bust - 1 visit used
+    g.hist.push({pi:g.cur,score:p.score,dartsUsed:3,isBot:true,botScored:scored});
     p.darts+=1;p.rounds++;
     nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);return;
   }
@@ -1319,8 +1352,14 @@ function doBotTurn(){
     const totalLegDarts=p.legDarts;
     checkLegWin(p,pi,totalLegDarts);return;
   }
+  g.hist.push({pi:g.cur,score:p.score,dartsUsed:3,isBot:true,botScored:scored});
   p.score=rem;p.darts+=1;p.rounds++;
   nextP();render501();if(g.pl[g.cur].bot)setTimeout(doBotTurn,900);
+}
+function doBotTurn(){
+  const p=g.pl[g.cur];
+  const scored=botRound(p.score,diff);
+  applyBotScored(scored);
 }
 
 // ─── OVERLAYS 501 ─────────────────────────────────────────────────────────────
@@ -1960,8 +1999,11 @@ function startMic(inputId, btnId, statusId){
         btn.classList.remove('listening');
         btn.classList.add('success');
         status.textContent = '✅ ' + found;
-        if(inputId==='dInp')confirmDirect();
-        else if(inputId==='d121Inp')confirm121Direct();
+        // Delay confirm slightly so mic audio stream closes before TTS starts
+        setTimeout(()=>{
+          if(inputId==='dInp')confirmDirect();
+          else if(inputId==='d121Inp')confirm121Direct();
+        },300);
         setTimeout(()=>{btn.classList.remove('success');status.textContent='';inp.placeholder='0–180';},1200);
       } else {
         // Nije prepoznat broj, pokaži grešku ali ostani aktivan još malo
