@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Dartsscore</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -19,6 +22,9 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+@media (display-mode: fullscreen),(display-mode: standalone){
+  html,body{height:100vh;width:100vw;position:fixed;top:0;left:0;}
+}
 body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;display:flex;flex-direction:column}
 /* ambient background */
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
@@ -2199,7 +2205,7 @@ const manifestData = {
   "name": "Dartsscore",
   "short_name": "Dartsscore",
   "start_url": ".",
-  "display": "standalone",
+  "display": "fullscreen",
   "scope": "./",
   "orientation": "any",
   "background_color": "#07090d",
